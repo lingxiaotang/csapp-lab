@@ -192,15 +192,16 @@ void eval(char *cmdline)
             setpgid(0,0);
             sigprocmask(SIG_UNBLOCK,&mask,NULL);
             if(execve(argv[0],argv,environ)<0)
-                printf("Error in execution!\n");
-            return;
+                printf("%s Command not found\n",argv[0]);
+            exit(0);
         }
         //parent process
         if(!is_bg)
         {
             addjob(jobs,pid,FG,cmdline);
             sigprocmask(SIG_SETMASK,&prev_mask,NULL);
-            waitpid(pid,NULL,WUNTRACED);
+            //waitpid(pid,NULL,WUNTRACED);
+            waitfg(pid);
         }
 
         if(is_bg)
@@ -344,7 +345,7 @@ void do_bgfg(char **argv)
     {
         this_job->state=FG;
         kill(-this_job->pid,SIGCONT);
-        waitpid(this_job->pid,NULL,WUNTRACED);
+        waitfg(this_job->pid);//如果这里用了waitpid,那么就相当于删了两次！！！
     }
     
     return;
@@ -383,7 +384,8 @@ void sigchld_handler(int sig)
 
         if(WIFEXITED(status))
         {
-	        deletejob(jobs,pid);
+	        printf("[%d] (%d) exited with status %d.\n",this_job->jid,(int)this_job->pid,WEXITSTATUS(status));
+            deletejob(jobs,pid);
         }
         if(WIFSIGNALED(status))
         {
