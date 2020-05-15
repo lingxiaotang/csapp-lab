@@ -85,6 +85,10 @@ void app_error(char *msg);
 typedef void handler_t(int);
 handler_t *Signal(int signum, handler_t *handler);
 
+
+/*my add function*/
+int is_digit(char*s);
+
 /*
  * main - The shell's main routine 
  */
@@ -165,8 +169,49 @@ int main(int argc, char **argv)
 */
 void eval(char *cmdline) 
 {
-    return;
+    char buf[MAXARGS];
+    char*argv[MAXARGS];
+    int is_bg;
+    
+    strcpy(buf,cmdline);
+    if(!strcmp("\n",buf)) //do not ignore corner cases or there will be serious consequences.
+        return;
+
+    is_bg=parseline(buf,argv);
+    
+
+    sigset_t mask,prev_mask;
+    pid_t pid;
+    sigemptyset(&mask);
+    sigprocmask(SIG_BLOCK,&mask,&prev_mask);
+    
+    if(!builtin_cmd(argv))
+    {
+        if((pid=fork())==0)
+        {
+            setpgid(0,0);
+            sigprocmask(SIG_UNBLOCK,&mask,NULL);
+            if(execve(argv[0],argv,environ)<0)
+                printf("Error in execution!\n");
+            return;
+        }
+        //parent process
+        if(!is_bg)
+        {
+            addjob(jobs,pid,FG,cmdline);
+            sigprocmask(SIG_SETMASK,&prev_mask,NULL);
+            waitpid(pid,NULL,WUNTRACED);
+        }
+
+        if(is_bg)
+        {
+            addjob(jobs,pid,BG,cmdline);
+            sigprocmask(SIG_SETMASK,&prev_mask,NULL);
+        }
+
+    }
 }
+
 
 /* 
  * parseline - Parse the command line and build the argv array.
@@ -231,14 +276,77 @@ int parseline(const char *cmdline, char **argv)
  */
 int builtin_cmd(char **argv) 
 {
+    if(!strcmp(argv[0],"quit"))
+        exit(0);
+    if(!strcmp(argv[0],"jobs"))
+    {
+        listjobs(jobs);
+        return 1;
+    }
+    else if(!strcmp(argv[0],"bg")||!strcmp(argv[0],"fg"))
+    {
+        do_bgfg(argv);
+        return 1;
+    }
+    
     return 0;     /* not a builtin command */
 }
+
+int is_digit(char*s)
+{
+    for(int i=0;i<strlen(s);i++)
+    {
+        if(!isdigit(*(s+i)))
+            return 0;
+    }
+    return 1;
+}
+
 
 /* 
  * do_bgfg - Execute the builtin bg and fg commands
  */
 void do_bgfg(char **argv) 
 {
+    if(argv[1]==NULL)
+    {
+        printf("bg or fg needs more argument!\n");
+        return;
+    }
+    
+    
+    if(!(argv[1][0]=='%'&&is_digit(&argv[1][1])||is_digit(argv[1])))
+    {
+        printf("Wrong argument!\n");
+        return;
+    }
+    
+    
+    
+    struct job_t* this_job;
+    if(argv[1][0]=='%')
+    {
+        int job_id=atoi(&argv[1][1]);
+        this_job=getjobjid(jobs,job_id);       
+    }
+    else
+    {
+        int pid=atoi(argv[1]);
+        this_job=getjobpid(jobs,pid);
+    }
+    
+    if(!strcmp(argv[0],"bg"))
+    {
+        this_job->state=BG;
+        kill(-this_job->pid,SIGCONT);
+    }
+    else
+    {
+        this_job->state=FG;
+        kill(-this_job->pid,SIGCONT);
+        waitpid(this_job->pid,NULL,WUNTRACED);
+    }
+    
     return;
 }
 
@@ -247,7 +355,10 @@ void do_bgfg(char **argv)
  */
 void waitfg(pid_t pid)
 {
-    return;
+    while(pid==fgpid(jobs))
+    {
+        sleep(1);
+    }
 }
 
 /*****************
@@ -263,6 +374,30 @@ void waitfg(pid_t pid)
  */
 void sigchld_handler(int sig) 
 {
+    pid_t pid;
+    int status;
+
+    while((pid=waitpid(-1,&status,WNOHANG|WUNTRACED))>0)
+    {
+        struct job_t* this_job=getjobpid(jobs,pid);
+
+        if(WIFEXITED(status))
+        {
+	        deletejob(jobs,pid);
+        }
+        if(WIFSIGNALED(status))
+        {
+            deletejob(jobs,pid);
+            printf("Job [%d] (%d) terminated by signal %d\n", this_job->jid, (int) this_job->pid, WTERMSIG(status));
+        }
+        if(WIFSTOPPED(status))
+        {
+            this_job->state=ST;
+            printf("Job [%d] (%d) stopped by signal %d\n", this_job->jid, (int) this_job->pid, WSTOPSIG(status));
+
+        }
+
+    }
     return;
 }
 
@@ -273,6 +408,9 @@ void sigchld_handler(int sig)
  */
 void sigint_handler(int sig) 
 {
+    pid_t pid=fgpid(jobs);
+    if(pid!=0)
+        kill(-pid,SIGINT);
     return;
 }
 
@@ -283,6 +421,11 @@ void sigint_handler(int sig)
  */
 void sigtstp_handler(int sig) 
 {
+    
+    pid_t pid=fgpid(jobs);
+    if(pid!=0)
+        kill(-pid,SIGTSTP);
+    
     return;
 }
 
@@ -324,8 +467,8 @@ int maxjid(struct job_t *jobs)
 /* addjob - Add a job to the job list */
 int addjob(struct job_t *jobs, pid_t pid, int state, char *cmdline) 
 {
-    int i;
     
+    int i;
     if (pid < 1)
 	return 0;
 
