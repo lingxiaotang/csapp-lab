@@ -6,6 +6,7 @@
 #include <string.h>
 #include <getopt.h>
 #include <malloc.h>
+#include "cachelab.h"
 
 //here defines some macros for dealing with load,store and modify
 #define LOAD 0
@@ -68,6 +69,11 @@ int hasEmptyLineInSet(cache*thisCache,uint64_t setIndex);
 void addTime(cache*thisCache);
 //help function for the LFU strategy
 int findTheLeastFrequencyLine(cache*thisCache,uint64_t setIndex);
+long hexToDec(char *source);
+int getIndexOfSigns(char ch);
+//when an instruction occurs,update the data block in the cache
+void updateCache(cache*thisCache,uint64_t setIndex,uint64_t tagIndex);
+
 
 
 int main(int argc, char *argv[])
@@ -90,13 +96,14 @@ int main(int argc, char *argv[])
             continue;
         printDealProcess(&address,&commandType,thisCache,commandLine+1);
     }
+    printSummary(hitNum,missNum,evictNum);
 }
 
 void parseCommandLine(int argc, char *argv[])
 {
     int ch = 0;
     char *helpMessage = "./csim-ref: Missing required command line argument\n"
-                        "Usage: ./csim-ref [-hv] -s <num> -E <num> -b <num> -t <file>\n"
+                        "Usage: ./csim [-hv] -s <num> -E <num> -b <num> -t <file>\n"
                         "Options:\n"
                         "-h         Print this help message.\n"
                         "-v         Optional verbose flag.\n"
@@ -106,8 +113,8 @@ void parseCommandLine(int argc, char *argv[])
                         "-t <file>  Trace file.\n"
 
                         "Examples:\n"
-                        "linux>  ./csim-ref -s 4 -E 1 -b 4 -t traces/yi.trace\n"
-                        "linux>  ./csim-ref -v -s 8 -E 2 -b 4 -t traces/yi.trace";
+                        "linux>  ./csim -s 4 -E 1 -b 4 -t traces/yi.trace\n"
+                        "linux>  ./csim -v -s 8 -E 2 -b 4 -t traces/yi.trace";
     opterr = 0;
     while ((ch = getopt(argc, argv, "h::v::s:E:b:t:")) != -1)
     {
@@ -256,13 +263,13 @@ void printDealProcess(uint64_t*address,int *commandType,cache*thisCache,char* co
         updateCache(thisCache,setIndex,tagIndex);
         putchar('\n');
     }
-    if(*commandType=STORE)
+    if(*commandType==STORE)
     {
         printf("%s ",commandLine);
         updateCache(thisCache,setIndex,tagIndex);
         putchar('\n');
     }
-    if(*commandType=MODIFY)
+    if(*commandType==MODIFY)
     {
         printf("%s ",commandLine);
         updateCache(thisCache,setIndex,tagIndex);
