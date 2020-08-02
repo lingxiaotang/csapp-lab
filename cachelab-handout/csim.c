@@ -13,6 +13,12 @@
 #define STORE 1
 #define MODIFY 2
 #define MAXLINE 100
+//define the result of the fetch progress
+#define HIT 0
+#define MISS 1
+#define EVICT 2
+//define a global variable to indicate whether the process is visible
+static int isVisible = 0;
 
 //here defines some global datas
 //S is the number of sets
@@ -47,8 +53,7 @@ typedef struct
 } cache;
 
 //here defines some variables to store the result
-static int hitNum=0,missNum=0,evictNum=0;
-
+static int hitNum = 0, missNum = 0, evictNum = 0;
 
 //parse command line parameters and save them to local variables
 void parseCommandLine(int argc, char *argv[]);
@@ -58,45 +63,45 @@ uint64_t getSetIndex(uint64_t address);
 uint64_t getTagIndex(uint64_t address);
 
 // to parse a file line,the address and the command type will be stored in address and  commandType variable
-void parseLine(char* commandLine,uint64_t*address,int *commandType);
-//print the processing process to the terminal
-void printDealProcess(uint64_t*address,int *commandType,cache*thisCache,char* commandLine);
+void parseLine(char *commandLine, uint64_t *address, int *commandType);
+//deal with the cache processing process
+void DealProcess(uint64_t *address, int *commandType, cache *thisCache, char *commandLine);
 //check whether the address is in cache
-int hasDataInCache(cache*thisCache,uint64_t setIndex,uint64_t tagIndex);
+int hasDataInCache(cache *thisCache, uint64_t setIndex, uint64_t tagIndex);
 //find the unused line in the current set,returns -1 if there is no empty set
-int hasEmptyLineInSet(cache*thisCache,uint64_t setIndex);
+int hasEmptyLineInSet(cache *thisCache, uint64_t setIndex);
 //add time for all valid lines
-void addTime(cache*thisCache);
+void addTime(cache *thisCache);
 //help function for the LFU strategy
-int findTheLeastFrequencyLine(cache*thisCache,uint64_t setIndex);
+int findTheLeastFrequencyLine(cache *thisCache, uint64_t setIndex);
 long hexToDec(char *source);
 int getIndexOfSigns(char ch);
 //when an instruction occurs,update the data block in the cache
-void updateCache(cache*thisCache,uint64_t setIndex,uint64_t tagIndex);
-
-
+void updateCache(cache *thisCache, uint64_t setIndex, uint64_t tagIndex, char *commandLine, int *status);
+//print the processing process to the terminal
+void printProcess(char *commandLine, int *status, int isPrintCommandLine, int isPrintNewLine);
 
 int main(int argc, char *argv[])
 {
     parseCommandLine(argc, argv);
-    FILE * fp;
+    FILE *fp;
     char commandLine[MAXLINE];
-    if((fp=fopen(fileName,"r"))==NULL)
+    if ((fp = fopen(fileName, "r")) == NULL)
     {
         puts("File open error!\nPlease check whether file exists!");
         return 0;
     }
-    cache* thisCache=buildCache();
-    while (fgets(commandLine,MAXLINE,fp)!=NULL)
+    cache *thisCache = buildCache();
+    while (fgets(commandLine, MAXLINE, fp) != NULL)
     {
-        uint64_t address=-1;
-        int commandType=-1;
-        parseLine(commandLine,&address,&commandType);
-        if(address==-1||commandType==-1)
+        uint64_t address = -1;
+        int commandType = -1;
+        parseLine(commandLine, &address, &commandType);
+        if (address == -1 || commandType == -1)
             continue;
-        printDealProcess(&address,&commandType,thisCache,commandLine+1);
+        DealProcess(&address, &commandType, thisCache, commandLine + 1);
     }
-    printSummary(hitNum,missNum,evictNum);
+    printSummary(hitNum, missNum, evictNum);
 }
 
 void parseCommandLine(int argc, char *argv[])
@@ -125,8 +130,7 @@ void parseCommandLine(int argc, char *argv[])
             exit(0);
             break;
         case 'v':
-            puts(helpMessage);
-            exit(0);
+            isVisible = 1;
             break;
         case 's':
             s = atol(optarg);
@@ -186,172 +190,205 @@ void destoryCache(cache *thisCache)
 
 uint64_t getSetIndex(uint64_t address)
 {
-    return (address>>b)*((1<<s)-1);
+    return (address >> b) & ((1 << s) - 1);
 }
-
 
 uint64_t getTagIndex(uint64_t address)
 {
-    return address>>(s+b);
+    return address >> (s + b);
 }
 
-void parseLine(char* commandLine,uint64_t*address,int *commandType)
+void parseLine(char *commandLine, uint64_t *address, int *commandType)
 {
     // remove I
-    if(commandLine[0]!=' ')
+    if (commandLine[0] != ' ')
         return;
-    int i=1;
-    if(commandLine[i]=='M')
-        *commandType=MODIFY;
-    if(commandLine[i]=='L')
-        *commandType=LOAD;
-    if(commandLine[i]=='S')
-        *commandType=STORE;    
-    i=3;
-    int j=0;
+    int i = 1;
+    if (commandLine[i] == 'M')
+        *commandType = MODIFY;
+    if (commandLine[i] == 'L')
+        *commandType = LOAD;
+    if (commandLine[i] == 'S')
+        *commandType = STORE;
+    i = 3;
+    int j = 0;
     char addressLine[MAXLINE];
-    while(commandLine[i]!=','){
-        addressLine[j++]=commandLine[i];
+    while (commandLine[i] != ',')
+    {
+        addressLine[j++] = commandLine[i++];
     }
-    address[j]='\0';
-    *address=hexToDec(addressLine);
+    addressLine[j] = '\0';
+    *address = hexToDec(addressLine);
 }
-
 
 long hexToDec(char *source)
 {
     long sum = 0;
     long t = 1;
     int i, len;
- 
+
     len = strlen(source);
-    for(i=len-1; i>=0; i--)
+    for (i = len - 1; i >= 0; i--)
     {
         sum += t * getIndexOfSigns(*(source + i));
         t *= 16;
-    }  
- 
+    }
     return sum;
 }
- 
+
 /* 返回ch字符在sign数组中的序号 */
 int getIndexOfSigns(char ch)
 {
-    if(ch >= '0' && ch <= '9')
+    if (ch >= '0' && ch <= '9')
     {
         return ch - '0';
     }
-    if(ch >= 'A' && ch <='F') 
+    if (ch >= 'A' && ch <= 'F')
     {
         return ch - 'A' + 10;
     }
-    if(ch >= 'a' && ch <= 'f')
+    if (ch >= 'a' && ch <= 'f')
     {
         return ch - 'a' + 10;
     }
     return -1;
 }
 
-void printDealProcess(uint64_t*address,int *commandType,cache*thisCache,char* commandLine)
+void DealProcess(uint64_t *address, int *commandType, cache *thisCache, char *commandLine)
 {
-    uint64_t setIndex=getSetIndex(*address);
-    uint64_t tagIndex=getTagIndex(*address);
-
-    if(*commandType==LOAD)
+    uint64_t setIndex = getSetIndex(*address);
+    uint64_t tagIndex = getTagIndex(*address);
+    int status = 0;
+    if (*commandType == LOAD)
     {
-        printf("%s ",commandLine);
-        updateCache(thisCache,setIndex,tagIndex);
-        putchar('\n');
+        updateCache(thisCache, setIndex, tagIndex, commandLine, &status);
+        if (isVisible)
+            printProcess(commandLine, &status, 1, 1);
     }
-    if(*commandType==STORE)
+    if (*commandType == STORE)
     {
-        printf("%s ",commandLine);
-        updateCache(thisCache,setIndex,tagIndex);
-        putchar('\n');
+        updateCache(thisCache, setIndex, tagIndex, commandLine, &status);
+        if (isVisible)
+            printProcess(commandLine, &status, 1, 1);
     }
-    if(*commandType==MODIFY)
+    if (*commandType == MODIFY)
     {
-        printf("%s ",commandLine);
-        updateCache(thisCache,setIndex,tagIndex);
-        updateCache(thisCache,setIndex,tagIndex);
-        putchar('\n');
+        updateCache(thisCache, setIndex, tagIndex, commandLine, &status);
+        if (isVisible)
+            printProcess(commandLine, &status, 1, 0);
+        updateCache(thisCache, setIndex, tagIndex, commandLine, &status);
+        if (isVisible)
+            printProcess(commandLine, &status, 0, 1);
     }
 }
 
-void updateCache(cache*thisCache,uint64_t setIndex,uint64_t tagIndex)
+void updateCache(cache *thisCache, uint64_t setIndex, uint64_t tagIndex, char *commandLine, int *status)
 {
     addTime(thisCache);
-    if(hasDataInCache(thisCache,setIndex,tagIndex))
+    if (hasDataInCache(thisCache, setIndex, tagIndex))
     {
-        printf("hit ");
         hitNum++;
+        *status = HIT;
     }
     else
     {
-        printf("miss ");
         missNum++;
-        int emptyLineIndex=hasEmptyLineInSet(thisCache,setIndex);
-        if(emptyLineIndex!=-1){
-            thisCache->sets[setIndex].lines[emptyLineIndex].isValid=1;
-            thisCache->sets[setIndex].lines[emptyLineIndex].tagIndex=tagIndex;
-            thisCache->sets[setIndex].lines[emptyLineIndex].time=0;
+        *status = MISS;
+        int emptyLineIndex = hasEmptyLineInSet(thisCache, setIndex);
+        if (emptyLineIndex != -1)
+        {
+            thisCache->sets[setIndex].lines[emptyLineIndex].isValid = 1;
+            thisCache->sets[setIndex].lines[emptyLineIndex].tagIndex = tagIndex;
+            thisCache->sets[setIndex].lines[emptyLineIndex].time = 0;
         }
         else
         {
+            *status = EVICT;
             evictNum++;
-            printf("eviction ");
-            int line=findTheLeastFrequencyLine(thisCache,setIndex);
-            thisCache->sets[setIndex].lines[line].tagIndex=tagIndex;
-            thisCache->sets[setIndex].lines[line].time=0;
+            int line = findTheLeastFrequencyLine(thisCache, setIndex);
+            thisCache->sets[setIndex].lines[line].tagIndex = tagIndex;
+            thisCache->sets[setIndex].lines[line].time = 0;
         }
     }
 }
 
-int hasDataInCache(cache*thisCache,uint64_t setIndex,uint64_t tagIndex)
+int hasDataInCache(cache *thisCache, uint64_t setIndex, uint64_t tagIndex)
 {
-    for(int i=0;i<E;i++)
+    for (int i = 0; i < E; i++)
     {
-        if(thisCache->sets[setIndex].lines[i].isValid&&thisCache->sets[setIndex].lines[i].tagIndex==tagIndex){
-            thisCache->sets[setIndex].lines[i].time=0;
+        if (thisCache->sets[setIndex].lines[i].isValid && thisCache->sets[setIndex].lines[i].tagIndex == tagIndex)
+        {
+            thisCache->sets[setIndex].lines[i].time = 0;
             return 1;
         }
     }
     return 0;
 }
 
-int hasEmptyLineInSet(cache*thisCache,uint64_t setIndex)
+int hasEmptyLineInSet(cache *thisCache, uint64_t setIndex)
 {
-    for(int i=0;i<E;i++)
+    for (int i = 0; i < E; i++)
     {
-        if(!thisCache->sets[setIndex].lines[i].isValid)
+        if (!thisCache->sets[setIndex].lines[i].isValid)
             return i;
     }
     return -1;
 }
 
-void addTime(cache*thisCache)
+void addTime(cache *thisCache)
 {
-    for(int i=0;i<S;i++)
+    for (int i = 0; i < S; i++)
     {
-        for(int j=0;j<E;j++)
+        for (int j = 0; j < E; j++)
         {
-            if(thisCache->sets[i].lines[j].isValid)
+            if (thisCache->sets[i].lines[j].isValid)
                 thisCache->sets[i].lines[j].time++;
         }
     }
 }
 
-int findTheLeastFrequencyLine(cache*thisCache,uint64_t setIndex)
+int findTheLeastFrequencyLine(cache *thisCache, uint64_t setIndex)
 {
-    int resultIndex=0;
-    uint64_t time=0;
-    for(int i=0;i<E;i++)
+    int resultIndex = 0;
+    uint64_t time = 0;
+    for (int i = 0; i < E; i++)
     {
-        if(thisCache->sets[setIndex].lines[i].time>time)
+        if (thisCache->sets[setIndex].lines[i].time > time)
         {
-            resultIndex=i;
-            time=thisCache->sets[setIndex].lines[i].time;
+            resultIndex = i;
+            time = thisCache->sets[setIndex].lines[i].time;
         }
     }
     return resultIndex;
+}
+
+void printProcess(char *commandLine, int *status, int isPrintCommandLine, int isPrintNewLine)
+{
+    if (*status == HIT)
+    {
+        if (isPrintCommandLine)
+            printf("%s ", commandLine);
+        printf(" hit");
+        if (isPrintNewLine)
+            printf("\n");
+    }
+
+    if (*status == MISS)
+    {
+        if (isPrintCommandLine)
+            printf("%s ", commandLine);
+        printf(" miss");
+        if (isPrintNewLine)
+            printf("\n");
+    }
+
+    if (*status == EVICT)
+    {
+        if (isPrintCommandLine)
+            printf("%s ", commandLine);
+        printf("miss ");
+        printf(" eviction");
+        if (isPrintNewLine)
+            printf("\n");
+    }
 }
