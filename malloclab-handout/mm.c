@@ -14,7 +14,6 @@
 #include <assert.h>
 #include <unistd.h>
 #include <string.h>
-
 #include "mm.h"
 #include "memlib.h"
 
@@ -41,6 +40,11 @@ team_t team = {
 /* rounds up to the nearest multiple of ALIGNMENT */
 #define ALIGN(size) (((size) + (ALIGNMENT-1)) & ~0x7)
 
+//define the size of the header
+#define HEADERSIZE 4
+
+//define the size of the word
+#define WORDSIZE 4
 
 #define SIZE_T_SIZE (ALIGN(sizeof(size_t)))
 
