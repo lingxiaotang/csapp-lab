@@ -71,7 +71,11 @@ void set_end_block(uint32_t* ptr);
 
 //ptr: the first word of the free block,size:the number of words in the block
 void write_free_block(uint32_t* ptr,int word_size);
-
+//ptr: the first word of the block
+uint32_t get_block_size(uint32_t* ptr);
+//ptr : the header of the block
+uint32_t* get_tailer_from_header(uint32_t* ptr);
+//ptr : the tailer of the block
 
 /* 
  * mm_init - initialize the malloc package.
@@ -163,8 +167,16 @@ void write_free_block(uint32_t* ptr,int word_size)
     *(ptr+(word_size-1)*WORDSIZE)=word_size*WORDSIZE;
 }
 
+uint32_t get_block_size(uint32_t* ptr)
+{
+    return ((*ptr)&(~0x7))/WORDSIZE;
+}
 
-
+uint32_t* get_tailer_from_header(uint32_t* ptr)
+{
+    int word_size=get_block_size(ptr);
+    return ptr+(word_size-1)*WORDSIZE;
+}
 
 
 
