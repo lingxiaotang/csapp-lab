@@ -1,18 +1,12 @@
 /*
  * implicit free lists with boundary tag optimization first
  * If the test result is not satisfied,we will consider other implimentation.
- * 
- * 
- * 
- * 
- *
- * 
- * 
  */
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
 #include <unistd.h>
+#include <stdint.h>
 #include <string.h>
 #include "mm.h"
 #include "memlib.h"
@@ -34,11 +28,6 @@ team_t team = {
     ""
 };
 
-/* single word (4) or double word (8) alignment */
-#define ALIGNMENT 8
-
-/* rounds up to the nearest multiple of ALIGNMENT */
-#define ALIGN(size) (((size) + (ALIGNMENT-1)) & ~0x7)
 
 //define the size of the header
 #define HEADERSIZE 4
@@ -46,14 +35,61 @@ team_t team = {
 //define the size of the word
 #define WORDSIZE 4
 
+/* single word (4) or double word (8) alignment */
+#define ALIGNMENT 8
+
+/* rounds up to the nearest multiple of ALIGNMENT */
+#define ALIGN(size) ((((size) + (ALIGNMENT-1)) & ~0x7)/WORDSIZE)
+
+
 #define SIZE_T_SIZE (ALIGN(sizeof(size_t)))
+
+//define the initial heapsize
+#define INITIALHEAP 1024
+
+//define some global variables
+//points to the first block of the heap
+uint32_t* header;
+//points to the last block of the heap
+uint32_t* tailer;
+
+
+
+
+//all function definitions
+int mm_init(void);
+void *mm_malloc(size_t size);
+void mm_free(void *ptr);
+void *mm_realloc(void *ptr, size_t size);
+
+//self-defined auxillary functions
+
+//set the begin block(auxillary function for the mm_init function),to mark the begin of the list
+void set_begin_block(uint32_t* ptr);
+//set the end block(auxillary function for the mm_init function),to mark the end of the list
+void set_end_block(uint32_t* ptr);
+
+
+void write_free_block(void* ptr,int size);
+
 
 /* 
  * mm_init - initialize the malloc package.
  */
 int mm_init(void)
 {
-    return 0;
+    int initial_free_word_payload=ALIGN(INITIALHEAP);
+    int initial_word_number=initial_free_word_payload+6;
+    header=mem_sbrk(initial_word_number*WORDSIZE);
+    if(header==-1)
+        return -1;
+    
+    //mark the begining of the list
+    header+=1;
+    set_begin_block(header);
+
+    tailer+=5+initial_free_word_payload;
+    set_end_block(tailer);
 }
 
 /* 
@@ -100,10 +136,21 @@ void *mm_realloc(void *ptr, size_t size)
 }
 
 
+void set_begin_block(uint32_t* ptr)
+{
+    *ptr=8;
+    *ptr=(*ptr)|0x1;
+    ptr++;
+    *ptr=8;
+    *ptr=(*ptr)|0x1;
+}
 
 
-
-
+void set_end_block(uint32_t* ptr)
+{
+    *ptr=0;
+    *ptr=(*ptr)|0x1;
+}
 
 
 
