@@ -69,8 +69,8 @@ void set_begin_block(uint32_t* ptr);
 //set the end block(auxillary function for the mm_init function),to mark the end of the list
 void set_end_block(uint32_t* ptr);
 
-
-void write_free_block(void* ptr,int size);
+//ptr: the first word of the free block,size:the number of words in the block
+void write_free_block(uint32_t* ptr,int word_size);
 
 
 /* 
@@ -87,6 +87,10 @@ int mm_init(void)
     //mark the begining of the list
     header+=1;
     set_begin_block(header);
+
+    //set the header to the actual header of the list
+    header+=2;
+    write_free_block(header,initial_free_word_payload+2);
 
     tailer+=5+initial_free_word_payload;
     set_end_block(tailer);
@@ -138,6 +142,7 @@ void *mm_realloc(void *ptr, size_t size)
 
 void set_begin_block(uint32_t* ptr)
 {
+    //first write the first two word that mark the beginning of the list
     *ptr=8;
     *ptr=(*ptr)|0x1;
     ptr++;
@@ -152,7 +157,11 @@ void set_end_block(uint32_t* ptr)
     *ptr=(*ptr)|0x1;
 }
 
-
+void write_free_block(uint32_t* ptr,int word_size)
+{
+    *ptr=word_size*WORDSIZE;
+    *(ptr+(word_size-1)*WORDSIZE)=word_size*WORDSIZE;
+}
 
 
 
