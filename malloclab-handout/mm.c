@@ -85,13 +85,13 @@ uint32_t* get_next_block(uint32_t* ptr);
 //return the header of the previous block,ptr is the header of the block,return null if it is the first block
 uint32_t* get_prev_block(uint32_t* ptr);
 //expand the heap when the allocated memory has run out and return the header of the free block
-uint32_t* expand_heap();
+uint32_t* expand_heap(uint32_t need_bytes);
 //find the available free block in the list by the first fit strategy(assume that the word_size has been processed)
-uint32_t* find_free_block_by_first_fit(size_t word_size);
+uint32_t* find_free_block_by_first_fit(uint32_t word_size);
 //find the available free block in the list by the best fit strategy(assume that the word_size has been processed)
-uint32_t* find_free_block_by_best_fit(size_t word_size);
+uint32_t* find_free_block_by_best_fit(uint32_t word_size);
 //get needed size(this function is used as a auxillary function for malloc to determine the needed size)
-uint32_t get_needed_word_number(size_t byteNumber);
+uint32_t get_needed_word_number(uint32_t byteNumber);
 //write and split the block when allocation happens
 uint32_t* write_split(uint32_t* ptr,int word_size);
 
@@ -124,14 +124,22 @@ int mm_init(void)
  */
 void *mm_malloc(size_t size)
 {
-    int newsize = ALIGN(size + SIZE_T_SIZE);
+    /*int newsize = ALIGN(size + SIZE_T_SIZE);
     void *p = mem_sbrk(newsize);
     if (p == (void *)-1)
 	return NULL;
     else {
         *(size_t *)p = size;
         return (void *)((char *)p + SIZE_T_SIZE);
-    }
+    }*/
+
+    uint32_t word_number=get_needed_word_number(size);
+    uint32_t* ptr=find_free_block_by_best_fit(word_number);
+    if(!ptr)
+        ptr=expand_heap(word_number*WORDSIZE);
+    ptr=write_split(ptr,word_number);
+    ptr++;
+    return (void*)ptr;
 }
 
 /*
@@ -238,7 +246,7 @@ uint32_t* expand_heap(uint32_t need_bytes)
     return ((uint32_t*)ptr)-1;
 }
 
-uint32_t* find_free_block_by_first_fit(size_t word_size)
+uint32_t* find_free_block_by_first_fit(uint32_t word_size)
 {
     uint32_t* ptr=header;
     uint32_t block_size;
@@ -259,7 +267,7 @@ uint32_t* find_free_block_by_first_fit(size_t word_size)
     }
 }
 
-uint32_t* find_free_block_by_best_fit(size_t word_size)
+uint32_t* find_free_block_by_best_fit(uint32_t word_size)
 {
     uint32_t* ptr=header;
     uint32_t* best_ptr=header;
@@ -289,7 +297,7 @@ uint32_t* find_free_block_by_best_fit(size_t word_size)
     return best_ptr;
 }
 
-uint32_t get_needed_word_number(size_t byteNumber)
+uint32_t get_needed_word_number(uint32_t byteNumber)
 {
     uint32_t word_number=((byteNumber+3)&(~0x11))/WORDSIZE;
     if((word_number+1)%2==0)
