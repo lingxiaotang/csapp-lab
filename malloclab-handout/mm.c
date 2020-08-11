@@ -49,12 +49,11 @@ team_t team = {
 
 //define some global variables
 //points to the first block of the heap
-uint32_t* header;
+uint32_t* header=NULL;
 //points to the last block of the heap
-uint32_t* tailer;
-
-
-
+uint32_t* tailer=NULL;
+//the next heap size that is going to allocate
+uint32_t allocate_size=16;
 
 //all function definitions
 int mm_init(void);
@@ -71,18 +70,32 @@ void set_end_block(uint32_t* ptr);
 
 //ptr: the first word of the free block,size:the number of words in the block
 void write_free_block(uint32_t* ptr,int word_size);
-//ptr: the first word of the block
+//ptr: the header or the tailer of the block
 uint32_t get_block_size(uint32_t* ptr);
+//is the block has been allocated(ptr is the header or the tailer of the block)
+int is_block_allocated(uint32_t* ptr);
 //ptr : the header of the block
 uint32_t* get_tailer_from_header(uint32_t* ptr);
 //ptr : the tailer of the block
+uint32_t* get_header_from_tailer(uint32_t* ptr);
+//get next block,ptr is the header of the block,return null if it is the last block
+uint32_t* get_next_block(uint32_t* ptr);
+//return the header of the previous block,ptr is the header of the block,return null if it is the first block
+uint32_t* get_prev_block(uint32_t* ptr);
+//expand the heap when the allocated memory has run out and return the header of the free block
+uint32_t* expand_heap();
+//find the available free block in the list by the first fit strategy(assume that the word_size has been processed)
+uint32_t* find_free_block_by_first_fit(int word_size);
+//find the available free block in the list by the best fit strategy(assume that the word_size has been processed)
+uint32_t* find_free_block_by_best_fit(int word_size);
+
 
 /* 
  * mm_init - initialize the malloc package.
  */
 int mm_init(void)
 {
-    int initial_free_word_payload=ALIGN(INITIALHEAP);
+    int initial_free_word_payload=ALIGN(allocate_size);
     int initial_word_number=initial_free_word_payload+6;
     header=mem_sbrk(initial_word_number*WORDSIZE);
     if(header==-1)
@@ -143,6 +156,10 @@ void *mm_realloc(void *ptr, size_t size)
     return newptr;
 }
 
+int is_block_allocated(uint32_t* ptr)
+{
+    return (*ptr)&0x1;
+}
 
 void set_begin_block(uint32_t* ptr)
 {
@@ -164,7 +181,7 @@ void set_end_block(uint32_t* ptr)
 void write_free_block(uint32_t* ptr,int word_size)
 {
     *ptr=word_size*WORDSIZE;
-    *(ptr+(word_size-1)*WORDSIZE)=word_size*WORDSIZE;
+    *(ptr+(word_size-1))=word_size*WORDSIZE;
 }
 
 uint32_t get_block_size(uint32_t* ptr)
@@ -172,11 +189,67 @@ uint32_t get_block_size(uint32_t* ptr)
     return ((*ptr)&(~0x7))/WORDSIZE;
 }
 
+
 uint32_t* get_tailer_from_header(uint32_t* ptr)
 {
     int word_size=get_block_size(ptr);
-    return ptr+(word_size-1)*WORDSIZE;
+    return ptr+(word_size-1);
 }
 
+uint32_t* get_header_from_tailer(uint32_t* ptr)
+{
+    int word_size=get_block_size(ptr);
+    return ptr-((word_size-1));
+}
 
+uint32_t* get_next_block(uint32_t* ptr)
+{
+    if(ptr==tailer)
+        return NULL;
+    int word_size=get_block_size(ptr);
+    return ptr+word_size;
+}
 
+uint32_t* get_prev_block(uint32_t* ptr)
+{
+    if(ptr==header)
+        return NULL;
+    return get_header_from_tailer(ptr-1);
+}
+
+uint32_t* expand_heap(uint32_t need_bytes)
+{
+    int payload_word_size=ALIGN(need_bytes);
+    void* ptr=mem_sbrk((payload_word_size+2)*WORDSIZE);
+
+    write_free_block(tailer,payload_word_size+2);
+    set_end_block(tailer+payload_word_size+2);
+    tailer+=(payload_word_size+2);
+    return ((uint32_t*)ptr)-1;
+}
+
+uint32_t* find_free_block_by_first_fit(int word_size)
+{
+    uint32_t* ptr=header;
+    uint32_t block_size;
+    while(1)
+    {
+        if(ptr==tailer)
+            return NULL;
+        else if(!is_block_allocated(ptr))
+        {
+            block_size=get_block_size(ptr);
+            if(block_size>=word_size)
+                return ptr;
+        }
+        else
+        {
+            ptr=get_next_block(ptr);
+        }
+    }
+}
+
+uint32_t* find_free_block_by_best_fit(int word_size)
+{
+    
+}
