@@ -187,17 +187,23 @@ void mm_free(void *ptr)
  */
 void *mm_realloc(void *ptr, size_t size)
 {
+    if (ptr == NULL)
+       return mm_malloc(size);
+    if (size == 0) {
+       mm_free(ptr);
+       return NULL;
+    }
+
     void *oldptr = ptr;
     void *newptr;
-    size_t copySize;
+    uint32_t copy_block_size=get_block_size((uint32_t*)ptr-1);
+    uint32_t payload_block_size=copy_block_size-2;
 
     newptr = mm_malloc(size);
     if (newptr == NULL)
         return NULL;
-    copySize = *(size_t *)((char *)oldptr - SIZE_T_SIZE);
-    if (size < copySize)
-        copySize = size;
-    memcpy(newptr, oldptr, copySize);
+    
+    memcpy(newptr, oldptr, payload_block_size*WORDSIZE);
     mm_free(oldptr);
     return newptr;
 }
