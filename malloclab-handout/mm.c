@@ -11,11 +11,11 @@
 #include "mm.h"
 #include "memlib.h"
 
- /*********************************************************
+/*********************************************************
   * NOTE TO STUDENTS: Before you do anything else, please
   * provide your team information in the following struct.
   ********************************************************/
-team_t team ={
+team_t team = {
     /* Team name */
     "ateam",
     /* First member's full name */
@@ -25,9 +25,7 @@ team_t team ={
     /* Second member's full name (leave blank if none) */
     "",
     /* Second member's email address (leave blank if none) */
-    ""
-};
-
+    ""};
 
 //define the size of the header
 #define HEADERSIZE 4
@@ -39,7 +37,7 @@ team_t team ={
 #define ALIGNMENT 8
 
 /* rounds up to the nearest multiple of ALIGNMENT */
-#define ALIGN(size) ((((size) + (ALIGNMENT-1)) & ~0x7)/WORDSIZE)
+#define ALIGN(size) ((((size) + (ALIGNMENT - 1)) & ~0x7) / WORDSIZE)
 
 #define MINBLOCKSIZE 4
 
@@ -50,10 +48,11 @@ team_t team ={
 
 //define some global variables
 //points to the first block of the heap
-uint32_t* header=NULL;
+uint32_t *header = NULL;
 //points to the last block of the heap
-uint32_t* tailer=NULL;
-
+uint32_t *tailer = NULL;
+//auxillary function for the next_fit strategy
+uint32_t *prev_block = NULL;
 
 //all function definitions
 int mm_init(void);
@@ -64,54 +63,52 @@ void *mm_realloc(void *ptr, size_t size);
 //self-defined auxillary functions
 
 //set the begin block(auxillary function for the mm_init function),to mark the begin of the list
-void set_begin_block(uint32_t* ptr);
+void set_begin_block(uint32_t *ptr);
 //set the end block(auxillary function for the mm_init function),to mark the end of the list
-void set_end_block(uint32_t* ptr);
+void set_end_block(uint32_t *ptr);
 //ptr: the first word of the free block,size:the number of words in the block
-void write_free_block(uint32_t* ptr, int word_size);
+void write_free_block(uint32_t *ptr, int word_size);
 //ptr: the first word of the allocated block,size:the number of words in the block
-void write_allocated_block(uint32_t* ptr, int word_size);
+void write_allocated_block(uint32_t *ptr, int word_size);
 //ptr: the header or the tailer of the block
-uint32_t get_block_size(uint32_t* ptr);
+uint32_t get_block_size(uint32_t *ptr);
 //is the block has been allocated(ptr is the header or the tailer of the block)
-int is_block_allocated(uint32_t* ptr);
+int is_block_allocated(uint32_t *ptr);
 //ptr : the header of the block
-uint32_t* get_tailer_from_header(uint32_t* ptr);
+uint32_t *get_tailer_from_header(uint32_t *ptr);
 //ptr : the tailer of the block
-uint32_t* get_header_from_tailer(uint32_t* ptr);
+uint32_t *get_header_from_tailer(uint32_t *ptr);
 //get next block,ptr is the header of the block,return null if it is the last block
-uint32_t* get_next_block(uint32_t* ptr);
+uint32_t *get_next_block(uint32_t *ptr);
 //return the header of the previous block,ptr is the header of the block,return null if it is the first block
-uint32_t* get_prev_block(uint32_t* ptr);
+uint32_t *get_prev_block(uint32_t *ptr);
 //expand the heap when the allocated memory has run out and return the header of the free block
-uint32_t* expand_heap(uint32_t need_bytes);
+uint32_t *expand_heap(uint32_t need_bytes);
 //find the available free block in the list by the first fit strategy(assume that the word_size has been processed)
-uint32_t* find_free_block_by_first_fit(uint32_t word_size);
+uint32_t *find_free_block_by_first_fit(uint32_t word_size);
 //find the available free block in the list by the best fit strategy(assume that the word_size has been processed)
-uint32_t* find_free_block_by_best_fit(uint32_t word_size);
+uint32_t *find_free_block_by_best_fit(uint32_t word_size);
+//find the available free block in the list by the next fit strategy(assume that the word_size has been processed)
+uint32_t *find_free_block_by_next_fit(uint32_t word_size);
 //get needed size(this function is used as a auxillary function for malloc to determine the needed size)
 uint32_t get_needed_word_number(uint32_t byteNumber);
 //write and split the block when allocation happens
-uint32_t* write_split(uint32_t* ptr, int word_size);
-
-
-
-
+uint32_t *write_split(uint32_t *ptr, int word_size);
 
 /*
  * mm_init - initialize the malloc package.
  */
 int mm_init(void)
 {
-    header=(uint32_t*)mem_sbrk(4*WORDSIZE);
-    if ((int)header==-1)
+    header = (uint32_t *)mem_sbrk(4 * WORDSIZE);
+    if ((int)header == -1)
         return -1;
 
     //mark the begining of the list
-    header+=1;
+    header += 1;
     set_begin_block(header);
 
-    tailer=header+2;
+    tailer = header + 2;
     set_end_block(tailer);
     return 0;
 }
@@ -122,23 +119,21 @@ int mm_init(void)
  */
 void *mm_malloc(size_t size)
 {
-    uint32_t word_number=get_needed_word_number(size);
+    uint32_t word_number = get_needed_word_number(size);
 
-    uint32_t* ptr=find_free_block_by_best_fit(word_number);
+    uint32_t *ptr = find_free_block_by_next_fit(word_number);
 
     if (!ptr)
     {
 
-        ptr=expand_heap(word_number*WORDSIZE);
-
+        ptr = expand_heap(word_number * WORDSIZE*2);
     }
-    ptr=write_split(ptr, word_number);
-
+    ptr = write_split(ptr, word_number);
+    prev_block=ptr;
     ptr++;
 
-    return (void*)ptr;
+    return (void *)ptr;
 }
-
 
 /*
  * mm_free - Freeing a block does nothing.
@@ -146,38 +141,39 @@ void *mm_malloc(size_t size)
 void mm_free(void *ptr)
 {
 
-    uint32_t* this_header=((uint32_t*)ptr)-1;
+    uint32_t *this_header = ((uint32_t *)ptr) - 1;
 
-    uint32_t* prev_header=get_prev_block(this_header);
+    uint32_t *prev_header = get_prev_block(this_header);
 
-    uint32_t* next_header=get_next_block(this_header);
+    uint32_t *next_header = get_next_block(this_header);
 
-    uint32_t this_size=get_block_size(this_header);
+    uint32_t this_size = get_block_size(this_header);
 
-    uint32_t prev_size=get_block_size(prev_header);
+    uint32_t prev_size = get_block_size(prev_header);
 
-    uint32_t next_size=get_block_size(next_header);
+    uint32_t next_size = get_block_size(next_header);
 
-    int is_prevblock_allocated=0, is_nextblock_allocated=0;
-    is_prevblock_allocated=is_block_allocated(prev_header);
-    is_nextblock_allocated=is_block_allocated(next_header);
-    if (!is_prevblock_allocated&&!is_nextblock_allocated)
+    int is_prevblock_allocated = 0, is_nextblock_allocated = 0;
+    is_prevblock_allocated = is_block_allocated(prev_header);
+    is_nextblock_allocated = is_block_allocated(next_header);
+    if (!is_prevblock_allocated && !is_nextblock_allocated)
     {
-        write_free_block(prev_header, next_size+prev_size+this_size);
-
+        prev_block = prev_header;
+        write_free_block(prev_header, next_size + prev_size + this_size);
     }
-    else if (is_prevblock_allocated&&!is_nextblock_allocated)
+    else if (is_prevblock_allocated && !is_nextblock_allocated)
     {
-        write_free_block(this_header, next_size+this_size);
-
+        prev_block = this_header;
+        write_free_block(this_header, next_size + this_size);
     }
-    else if (!is_prevblock_allocated&&is_nextblock_allocated)
+    else if (!is_prevblock_allocated && is_nextblock_allocated)
     {
-        write_free_block(prev_header, this_size+prev_size);
-
+        prev_block = prev_header;
+        write_free_block(prev_header, this_size + prev_size);
     }
-    else if (is_prevblock_allocated&&is_nextblock_allocated)
+    else if (is_prevblock_allocated && is_nextblock_allocated)
     {
+        prev_block = this_header;
         write_free_block(this_header, this_size);
     }
 }
@@ -188,205 +184,247 @@ void mm_free(void *ptr)
 void *mm_realloc(void *ptr, size_t size)
 {
     if (ptr == NULL)
-       return mm_malloc(size);
-    if (size == 0) {
-       mm_free(ptr);
-       return NULL;
+        return mm_malloc(size);
+    if (size == 0)
+    {
+        mm_free(ptr);
+        return NULL;
     }
 
     void *oldptr = ptr;
     void *newptr;
-    uint32_t copy_block_size=get_block_size((uint32_t*)ptr-1);
-    uint32_t payload_block_size=copy_block_size-2;
+    uint32_t copy_block_size = get_block_size((uint32_t *)ptr - 1);
+    uint32_t payload_block_size = copy_block_size - 2;
 
     newptr = mm_malloc(size);
     if (newptr == NULL)
         return NULL;
-    
-    memcpy(newptr, oldptr, payload_block_size*WORDSIZE);
+
+    memcpy(newptr, oldptr, payload_block_size * WORDSIZE);
     mm_free(oldptr);
     return newptr;
 }
 
-int is_block_allocated(uint32_t* ptr)
+int is_block_allocated(uint32_t *ptr)
 {
     if (ptr)
-        return (*ptr)&0x1;
+        return (*ptr) & 0x1;
     else
     {
         return 0;
     }
 }
 
-void set_begin_block(uint32_t* ptr)
+void set_begin_block(uint32_t *ptr)
 {
     //first write the first two word that mark the beginning of the list
-    *ptr=8;
-    *ptr=(*ptr)|0x1;
+    *ptr = 8;
+    *ptr = (*ptr) | 0x1;
     ptr++;
-    *ptr=8;
-    *ptr=(*ptr)|0x1;
+    *ptr = 8;
+    *ptr = (*ptr) | 0x1;
 }
 
-
-void set_end_block(uint32_t* ptr)
+void set_end_block(uint32_t *ptr)
 {
-    *ptr=0;
-    *ptr=(*ptr)|0x1;
+    *ptr = 0;
+    *ptr = (*ptr) | 0x1;
 }
 
-void write_free_block(uint32_t* ptr, int word_size)
+void write_free_block(uint32_t *ptr, int word_size)
 {
-    *ptr=word_size*WORDSIZE;
-    *(ptr+(word_size-1))=word_size*WORDSIZE;
+    *ptr = word_size * WORDSIZE;
+    *(ptr + (word_size - 1)) = word_size * WORDSIZE;
 }
 
-void write_allocated_block(uint32_t* ptr, int word_size)
+void write_allocated_block(uint32_t *ptr, int word_size)
 {
-    *ptr=(word_size*WORDSIZE)|(0x1);
-    *(ptr+(word_size-1))=(word_size*WORDSIZE)|(0x1);
+    *ptr = (word_size * WORDSIZE) | (0x1);
+    *(ptr + (word_size - 1)) = (word_size * WORDSIZE) | (0x1);
 }
 
-uint32_t get_block_size(uint32_t* ptr)
+uint32_t get_block_size(uint32_t *ptr)
 {
     if (ptr)
     {
-        return ((*ptr)&(~0x7))/WORDSIZE;
+        return ((*ptr) & (~0x7)) / WORDSIZE;
     }
     else
     {
         return 0;
     }
-
 }
 
-
-uint32_t* get_tailer_from_header(uint32_t* ptr)
+uint32_t *get_tailer_from_header(uint32_t *ptr)
 {
-    uint32_t word_size=get_block_size(ptr);
-    return ptr+(word_size-1);
+    uint32_t word_size = get_block_size(ptr);
+    return ptr + (word_size - 1);
 }
 
-uint32_t* get_header_from_tailer(uint32_t* ptr)
+uint32_t *get_header_from_tailer(uint32_t *ptr)
 {
-    uint32_t word_size=get_block_size(ptr);
-    return ptr-((word_size-1));
+    uint32_t word_size = get_block_size(ptr);
+    return ptr - ((word_size - 1));
 }
 
-uint32_t* get_next_block(uint32_t* ptr)
+uint32_t *get_next_block(uint32_t *ptr)
 {
-    if (ptr==tailer)
+    if (ptr == tailer)
         return NULL;
-    uint32_t word_size=get_block_size(ptr);
-    return ptr+word_size;
+    uint32_t word_size = get_block_size(ptr);
+    return ptr + word_size;
 }
 
-uint32_t* get_prev_block(uint32_t* ptr)
+uint32_t *get_prev_block(uint32_t *ptr)
 {
-    if (ptr==header)
+    if (ptr == header)
         return NULL;
-    return get_header_from_tailer(ptr-1);
+    return get_header_from_tailer(ptr - 1);
 }
 
-uint32_t* expand_heap(uint32_t need_bytes)
+uint32_t *expand_heap(uint32_t need_bytes)
 {
-    uint32_t word_size=need_bytes/WORDSIZE;
-    void* ptr=mem_sbrk(word_size*WORDSIZE);
+    uint32_t word_size = need_bytes / WORDSIZE;
+    void *ptr = mem_sbrk(word_size * WORDSIZE);
 
     write_free_block(tailer, word_size);
 
-    uint32_t* prev_header=get_header_from_tailer(tailer-1);
+    uint32_t *prev_header = get_header_from_tailer(tailer - 1);
 
     if (!is_block_allocated(prev_header))
     {
 
-        write_free_block(prev_header, get_block_size(prev_header)+word_size);
+        write_free_block(prev_header, get_block_size(prev_header) + word_size);
 
-        set_end_block(tailer+word_size);
-        tailer+=word_size;
+        set_end_block(tailer + word_size);
+        tailer += word_size;
         return prev_header;
     }
-    set_end_block(tailer+word_size);
+    set_end_block(tailer + word_size);
 
-    tailer+=word_size;
+    tailer += word_size;
 
-    return ((uint32_t*)ptr)-1;
+    return ((uint32_t *)ptr) - 1;
 }
 
-uint32_t* find_free_block_by_first_fit(uint32_t word_size)
+uint32_t *find_free_block_by_first_fit(uint32_t word_size)
 {
-    uint32_t* ptr=header;
+    uint32_t *ptr = header;
     uint32_t block_size;
     while (1)
     {
-        if (ptr==tailer)
+        if (ptr == tailer)
             return NULL;
         else if (!is_block_allocated(ptr))
         {
-            block_size=get_block_size(ptr);
-            if (block_size>=word_size)
+            block_size = get_block_size(ptr);
+            if (block_size >= word_size)
                 return ptr;
         }
-        ptr=get_next_block(ptr);
+        ptr = get_next_block(ptr);
     }
     return ptr;
 }
 
-uint32_t* find_free_block_by_best_fit(uint32_t word_size)
+uint32_t *find_free_block_by_best_fit(uint32_t word_size)
 {
-    uint32_t* ptr=header;
-    uint32_t* best_ptr=NULL;
+    uint32_t *ptr = header;
+    uint32_t *best_ptr = NULL;
     uint32_t block_size;
-    uint32_t best_size=UINT32_MAX;
+    uint32_t best_size = UINT32_MAX;
     while (1)
     {
-        if (ptr==tailer)
-            break;
-        else if (!is_block_allocated(ptr)&&ptr!=tailer)
-        {
-            block_size=get_block_size(ptr);
 
-            if (block_size>=word_size)
+        if (ptr == tailer)
+            break;
+        else if (!is_block_allocated(ptr) && ptr != tailer)
+        {
+            block_size = get_block_size(ptr);
+
+            if (block_size >= word_size)
             {
 
-                if (block_size<best_size)
+                if (block_size < best_size)
                 {
-                    best_size=block_size;
-                    best_ptr=ptr;
+                    best_size = block_size;
+                    best_ptr = ptr;
                 }
             }
         }
-        ptr=get_next_block(ptr);
+        ptr = get_next_block(ptr);
     }
-
     return best_ptr;
+}
+
+uint32_t *find_free_block_by_next_fit(uint32_t word_size)
+{
+    if (prev_block == NULL)
+    {
+        return NULL;
+    }
+    else
+    {
+        uint32_t *ptr = prev_block;
+        uint32_t block_size;
+        while (1)
+        {
+            if (ptr == tailer)
+                break;
+            else if (!is_block_allocated(ptr))
+            {
+                block_size = get_block_size(ptr);
+                if (block_size >= word_size)
+                {
+                    prev_block = ptr;
+                    return ptr;
+                }
+            }
+            ptr = get_next_block(ptr);
+        }
+
+        ptr = header;
+        while (1)
+        {
+            if (ptr == prev_block)
+                return NULL;
+            else if (!is_block_allocated(ptr))
+            {
+                block_size = get_block_size(ptr);
+                if (block_size >= word_size)
+                    return ptr;
+            }
+            ptr = get_next_block(ptr);
+        }
+        return NULL;
+    }
 }
 
 uint32_t get_needed_word_number(uint32_t byteNumber)
 {
-    uint32_t word_number=((byteNumber+3)&(~0x3))/WORDSIZE;
-    if ((word_number)%2==0)
-        return word_number+2;
+    uint32_t word_number = ((byteNumber + 3) & (~0x3)) / WORDSIZE;
+    if ((word_number) % 2 == 0)
+        return word_number + 2;
     else
     {
-        return word_number+3;
+        return word_number + 3;
     }
 }
 
-uint32_t* write_split(uint32_t* ptr, int word_size)
+uint32_t *write_split(uint32_t *ptr, int word_size)
 {
-    uint32_t block_word_num=get_block_size(ptr);
-    if (block_word_num-word_size>=2)
+    uint32_t block_word_num = get_block_size(ptr);
+    if (block_word_num - word_size >= 2)
     {
-        uint32_t remain_word_num=block_word_num-word_size;
+        uint32_t remain_word_num = block_word_num - word_size;
         write_allocated_block(ptr, word_size);
-        write_free_block(ptr+word_size, remain_word_num);
+        write_free_block(ptr + word_size, remain_word_num);
+        prev_block = ptr + word_size;
         return ptr;
     }
     else
     {
         write_allocated_block(ptr, word_size);
+        prev_block = NULL;
         return ptr;
     }
 }
-
