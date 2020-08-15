@@ -114,50 +114,8 @@ void insert_into_free_list(uint32_t *ptr, int index);
 //remove a block from the segregate free list
 void remove_from_free_list(uint32_t *ptr);
 int check_tailer_size(const char *str, int index);
-
+//auxilary functions to calculate the size
 uint32_t my_pow(uint32_t x, uint32_t y);
-
-void printinfo(uint32_t *ptr, const char *str)
-{
-    puts(str);
-    printf("ptr:%p\n", ptr);
-    printf("size:%d\n", get_block_size(ptr));
-    printf("is allocated %d\n", is_block_allocated(ptr));
-}
-
-int check_tailer_size(const char *str, int index)
-{
-    if (get_block_size(tailer) != 0)
-    {
-        printf("tailer's size is %d\n", get_block_size(tailer));
-        printf("The %s index is %d\n", str, index);
-        return 0;
-    }
-    printf("called!\n");
-    return 1;
-}
-
-int iterate(int size_print,const char* str)
-{
-    uint32_t *ptr = header;
-    
-    while (ptr != tailer)
-    {
-        ptr = get_next_block(ptr);
-        if (ptr > tailer || ptr < header||((get_block_size(ptr)<4)&&(ptr!=header)&&(ptr!=tailer)))
-        {
-            puts(str);
-            printf("error at %d size\n", size_print);
-            printf("size:%d\n",get_block_size(ptr));
-            printf("header:%p\n",header);
-            printf("tailer:%p\n",tailer);
-            printinfo(ptr,"detailed information for the pointer\n");
-
-            return 0;
-        }
-    }
-    return 1;
-}
 
 /*
  * mm_init - initialize the malloc package.
